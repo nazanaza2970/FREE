@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.DS_Store
+*.log
+rebranding.md
