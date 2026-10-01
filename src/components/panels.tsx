@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AuditLog, HostGroup, PortForward, Snippet, SyncConfig, SyncMergeResult, Theme } from '@shared/types';
+import type { AppPassword, AppPasswordCreated, AuditLog, HostGroup, PortForward, Snippet, SyncConfig, SyncMergeResult, Theme } from '@shared/types';
 import { extractVariables } from '@shared/snippets';
 import { DEFAULT_COLORS, exportThemesJson, parseThemesImport } from '@shared/theme';
 import type { ClipboardEntry } from '@shared/shortcuts';
@@ -824,6 +824,121 @@ export function SyncPanel() {
         <p className="hint">
           Previous: pushed {cfg.last_stats.pushed}, pulled {cfg.last_stats.pulled} at {cfg.last_sync_at}
         </p>
+      ) : null}
+    </div>
+  );
+}
+
+export function TokensPanel() {
+  const [tokens, setTokens] = useState<AppPassword[] | null>(null);
+  const [name, setName] = useState('');
+  const [scope, setScope] = useState('*');
+  const [created, setCreated] = useState<AppPasswordCreated | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () =>
+    api
+      .listTokens()
+      .then(setTokens)
+      .catch((e) => setError(String(e instanceof Error ? e.message : e)));
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const create = async () => {
+    if (!name.trim()) return;
+    setError(null);
+    try {
+      const t = await api.createToken({ name: name.trim(), scope });
+      setCreated(t);
+      setName('');
+      load();
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    }
+  };
+
+  const revoke = async (id: number) => {
+    setError(null);
+    try {
+      await api.revokeToken(id);
+      if (created?.id === id) setCreated(null);
+      load();
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    }
+  };
+
+  const copy = async () => {
+    if (!created) return;
+    try {
+      await navigator.clipboard.writeText(created.token);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
+  return (
+    <div className="panel">
+      <h3>Access tokens</h3>
+      <p className="hint">
+        Tokens authenticate requests to this app. If this browser is locked out, create a token here (or via
+        the API) and paste it on the lock screen.
+      </p>
+      {created ? (
+        <div style={{ marginBottom: 12 }}>
+          <p className="hint">New token — copy it now, it is not shown again:</p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input readOnly value={created.token} style={{ flex: 1 }} />
+            <button onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+          </div>
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <input
+          placeholder="Name (e.g. laptop)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          style={{ flex: 1 }}
+        />
+        <input
+          placeholder="Scope (*, read, verify, sync…)"
+          value={scope}
+          onChange={(e) => setScope(e.target.value)}
+          style={{ width: 180 }}
+        />
+        <button onClick={create}>Create</button>
+      </div>
+      {error ? <p className="hint">{error}</p> : null}
+      {tokens ? (
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Scope</th>
+              <th>Created</th>
+              <th>Last used</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {tokens.map((t) => (
+              <tr key={t.id} style={t.revoked ? { opacity: 0.5 } : undefined}>
+                <td>{t.name}</td>
+                <td>{t.scope}</td>
+                <td>{t.created_at}</td>
+                <td>{t.last_used_at ?? '—'}</td>
+                <td>
+                  {t.revoked ? 'revoked' : <button className="ghost" onClick={() => revoke(t.id)}>Revoke</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       ) : null}
     </div>
   );

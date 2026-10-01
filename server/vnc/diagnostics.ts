@@ -12,6 +12,8 @@ const SCRIPT = [
   'echo "==processes=="; ps -eo args 2>/dev/null | grep -E "Xvnc|tigervnc" | grep -v grep | head -5',
   'echo "==xsessions=="; ls /usr/share/xsessions 2>/dev/null',
   'echo "==sessiontype=="; loginctl show-session "$(loginctl 2>/dev/null | awk \'NR==2 {print $1}\')" -p Type 2>/dev/null',
+  'echo "==display=="; echo "${DISPLAY:-}"',
+  'echo "==xdisplays=="; ls /tmp/.X11-unix 2>/dev/null | sed \'s/^X//\'',
   'echo "==uid=="; id -u 2>/dev/null',
 ].join('\n');
 
@@ -42,12 +44,18 @@ export function parseDiagnostics(output: string, expectedPort: number): VncDiagn
     .map((line) => line.trim())
     .filter(Boolean);
   const sessionType = section(output, 'sessiontype');
+  const xdisplay = section(output, 'display').split('\n')[0]?.trim() || undefined;
+  const displays = section(output, 'xdisplays')
+    .split('\n')
+    .map((line) => Number(line.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 0);
   const uid = Number(section(output, 'uid').split('\n')[0]);
 
+  const binNames = bins.map((b) => b.split('/').pop() ?? b);
   let implementation: 'tigervnc' | 'x11vnc' | 'unknown' | undefined;
-  if (/TigerVNC/i.test(versionText) || (bins.includes('vncserver') && !bins.includes('x11vnc'))) {
+  if (/TigerVNC/i.test(versionText) || (binNames.includes('vncserver') && !binNames.includes('x11vnc'))) {
     implementation = 'tigervnc';
-  } else if (/x11vnc/i.test(versionText) || bins.includes('x11vnc')) {
+  } else if (/x11vnc/i.test(versionText) || binNames.includes('x11vnc')) {
     implementation = 'x11vnc';
   }
 
@@ -75,6 +83,12 @@ export function parseDiagnostics(output: string, expectedPort: number): VncDiagn
       ? 'x11'
       : 'unknown';
 
+  const displayNumber = xdisplay && /^\d+$/.test(xdisplay.replace(/^:/, ''))
+    ? Number(xdisplay.replace(/^:/, ''))
+    : undefined;
+  const canAccessDisplay =
+    displays.length > 0 && (uid === 0 || (displayNumber !== undefined && displays.includes(displayNumber)));
+
   return {
     os: distro ?? 'unknown',
     distribution: distro,
@@ -83,6 +97,7 @@ export function parseDiagnostics(output: string, expectedPort: number): VncDiagn
       installed: bins.length > 0,
       running: listeningPorts.includes(expectedPort) || processes.length > 0,
       implementation,
+      hasX11vnc: binNames.includes('x11vnc'),
       port: listeningPorts.includes(expectedPort) ? expectedPort : listeningPorts[0],
       display,
     },
@@ -90,10 +105,12 @@ export function parseDiagnostics(output: string, expectedPort: number): VncDiagn
       installed: xsessions.length > 0,
       environment,
       displayServer,
+      display: xdisplay,
+      displays,
     },
     permissions: {
       canStartVnc: Number.isInteger(uid) && (uid === 0 || bins.length > 0),
-      canAccessDisplay: xsessions.length > 0,
+      canAccessDisplay,
     },
     requirements: [],
   };

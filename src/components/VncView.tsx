@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Host, SessionState, VncRequirement } from '@shared/types';
-import { api } from '../api';
+import { api, getApiToken } from '../api';
 import VncSetupDisclaimer from './VncSetupDisclaimer';
 
 type RfbCtor = typeof import('@novnc/novnc').default;
@@ -28,7 +28,8 @@ interface Props {
 
 function wsUrl(hostId: number): string {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.host}/ws/vnc?host_id=${hostId}`;
+  const token = getApiToken();
+  return `${proto}://${window.location.host}/ws/vnc?host_id=${hostId}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
 }
 
 export default function VncView({ host, sessionId, active, onStatus, onReconnect }: Props) {
@@ -41,6 +42,7 @@ export default function VncView({ host, sessionId, active, onStatus, onReconnect
   const [viewOnly, setViewOnly] = useState(false);
   const [scaleMode, setScaleMode] = useState<ScaleMode>('fit');
   const [rechecking, setRechecking] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const disposeRfb = useCallback(() => {
     if (rfbRef.current) {
@@ -216,6 +218,26 @@ export default function VncView({ host, sessionId, active, onStatus, onReconnect
     rfb.resizeSession = scaleMode === 'resize';
   }, [viewOnly, scaleMode]);
 
+  const stopDesktop = useCallback(async () => {
+    if (stopping) return;
+    setStopping(true);
+    onStatus(host.id, 'connecting', 'stopping VNC desktop…');
+    try {
+      await api.vncStop(host.id);
+      disposeRfb();
+      setDetail(null);
+      setPhase('disconnected');
+      onStatus(host.id, 'disconnected', 'desktop stopped');
+    } catch (e) {
+      const msg = String(e instanceof Error ? e.message : e);
+      setDetail(msg);
+      setPhase('error');
+      onStatus(host.id, 'error', msg);
+    } finally {
+      setStopping(false);
+    }
+  }, [host.id, onStatus, stopping, disposeRfb]);
+
   const toggleFullscreen = () => {
     const el = containerRef.current?.parentElement;
     if (!el) return;
@@ -271,6 +293,14 @@ export default function VncView({ host, sessionId, active, onStatus, onReconnect
           }}
         >
           ⏻
+        </button>
+        <button
+          className="ghost"
+          title="Stop the remote desktop server (releases remote resources)"
+          onClick={() => void stopDesktop()}
+          disabled={stopping}
+        >
+          {stopping ? 'Stopping…' : '⏹ Stop desktop'}
         </button>
       </div>
       <div className="vnc-canvas" ref={containerRef} />

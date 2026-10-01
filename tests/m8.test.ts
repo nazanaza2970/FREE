@@ -133,12 +133,21 @@ test('tokens: scoped app passwords (create, verify, scope, revoke)', async () =>
     const missing = await app.inject({ method: 'GET', url: '/api/tokens/verify' });
     assert.equal(missing.statusCode, 401);
 
-    const c2 = await app.inject({ method: 'POST', url: '/api/tokens', payload: { name: 'ro', scope: 'read' } });
+    const c2 = await app.inject({
+      method: 'POST',
+      url: '/api/tokens',
+      headers: { authorization: `Bearer ${t1.token}` },
+      payload: { name: 'ro', scope: 'read' },
+    });
+    assert.equal(c2.statusCode, 201);
     const t2 = c2.json() as AppPasswordCreated;
     const wrong = await app.inject({ method: 'GET', url: '/api/tokens/verify', headers: { authorization: `Bearer ${t2.token}` } });
     assert.equal(wrong.statusCode, 403);
 
-    const list = await app.inject({ method: 'GET', url: '/api/tokens' });
+    const unauthed = await app.inject({ method: 'GET', url: '/api/tokens' });
+    assert.equal(unauthed.statusCode, 401);
+
+    const list = await app.inject({ method: 'GET', url: '/api/tokens', headers: { authorization: `Bearer ${t1.token}` } });
     assert.equal(list.statusCode, 200);
     const items = list.json() as AppPassword[];
     assert.ok(items.some((p) => p.name === 'ci'));
@@ -149,7 +158,7 @@ test('tokens: scoped app passwords (create, verify, scope, revoke)', async () =>
     const ci = items.find((p) => p.name === 'ci')!;
     assert.ok(ci.last_used_at, 'last_used_at must be recorded on verify');
 
-    const del = await app.inject({ method: 'DELETE', url: `/api/tokens/${t1.id}` });
+    const del = await app.inject({ method: 'DELETE', url: `/api/tokens/${t1.id}`, headers: { authorization: `Bearer ${t1.token}` } });
     assert.equal(del.statusCode, 204);
     const after = await app.inject({ method: 'GET', url: '/api/tokens/verify', headers: { authorization: `Bearer ${t1.token}` } });
     assert.equal(after.statusCode, 401);

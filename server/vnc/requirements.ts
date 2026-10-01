@@ -1,4 +1,4 @@
-import type { VncDiagnostics, VncRequirement } from '../../shared/types';
+import type { Host, VncDiagnostics, VncRequirement } from '../../shared/types';
 
 function packageManager(distribution: string | undefined): string | null {
   const name = (distribution ?? '').toLowerCase();
@@ -27,6 +27,23 @@ export function vncInstallCommands(distribution: string | undefined): string[] {
   }
 }
 
+export function x11vncInstallCommands(distribution: string | undefined): string[] {
+  switch (packageManager(distribution)) {
+    case 'apt':
+      return ['apt-get update', 'apt-get install -y x11vnc'];
+    case 'dnf':
+      return ['dnf install -y x11vnc'];
+    case 'pacman':
+      return ['pacman -S --noconfirm x11vnc'];
+    case 'apk':
+      return ['apk add x11vnc'];
+    case 'zypper':
+      return ['zypper install -y x11vnc'];
+    default:
+      return [];
+  }
+}
+
 export function desktopInstallCommands(distribution: string | undefined): string[] {
   switch (packageManager(distribution)) {
     case 'apt':
@@ -44,7 +61,24 @@ export function desktopInstallCommands(distribution: string | undefined): string
   }
 }
 
-export function getVncRequirements(diagnostics: VncDiagnostics | null): VncRequirement[] {
+export function resolveImplementation(
+  diagnostics: VncDiagnostics | null,
+  host: Pick<Host, 'vnc_implementation' | 'vnc_desktop_mode'>,
+): 'tigervnc' | 'x11vnc' {
+  if (host.vnc_implementation === 'tigervnc') return 'tigervnc';
+  if (host.vnc_implementation === 'x11vnc') return 'x11vnc';
+  if (host.vnc_desktop_mode === 'virtual') return 'tigervnc';
+  if (!diagnostics) return 'tigervnc';
+  if (diagnostics.desktop.displayServer === 'x11' && diagnostics.permissions.canAccessDisplay && diagnostics.vnc.hasX11vnc) {
+    return 'x11vnc';
+  }
+  return 'tigervnc';
+}
+
+export function getVncRequirements(
+  diagnostics: VncDiagnostics | null,
+  implementation: 'tigervnc' | 'x11vnc' = 'tigervnc',
+): VncRequirement[] {
   if (!diagnostics) {
     return [
       {
@@ -56,6 +90,33 @@ export function getVncRequirements(diagnostics: VncDiagnostics | null): VncRequi
   }
   if (diagnostics.vnc.running) return [];
   const requirements: VncRequirement[] = [];
+
+  if (implementation === 'x11vnc') {
+    if (!diagnostics.vnc.hasX11vnc) {
+      requirements.push({
+        type: 'x11vnc_missing',
+        severity: 'blocking',
+        message: `x11vnc is not installed on ${diagnostics.distribution ?? diagnostics.os}.`,
+        installCommands: x11vncInstallCommands(diagnostics.distribution),
+      });
+    }
+    if (
+      diagnostics.desktop.displayServer === 'wayland' ||
+      (diagnostics.desktop.displays ?? []).length === 0 ||
+      !diagnostics.permissions.canAccessDisplay
+    ) {
+      requirements.push({
+        type: 'display_unavailable',
+        severity: 'blocking',
+        message:
+          diagnostics.desktop.displayServer === 'wayland'
+            ? 'The remote session is Wayland-based; x11vnc requires an X11 display.'
+            : 'No accessible X11 display was found on the remote host.',
+      });
+    }
+    return requirements;
+  }
+
   if (!diagnostics.vnc.installed) {
     requirements.push({
       type: 'vnc_server_missing',

@@ -259,6 +259,7 @@ export default function HostForm({ initial, groups, hosts, presetGroupId, onSave
                       <select value={form.vnc_implementation ?? 'auto'} onChange={(e) => set('vnc_implementation', e.target.value as HostInput['vnc_implementation'])}>
                         <option value="auto">Auto-detect</option>
                         <option value="tigervnc">TigerVNC</option>
+                        <option value="x11vnc">x11vnc (existing X11 desktop)</option>
                       </select>
                     </div>
                     <div className="field">

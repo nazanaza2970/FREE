@@ -5,7 +5,7 @@ import { resolveVncConfig } from '../vnc/config';
 import { openVncStream } from '../vnc/transport';
 import { probeVnc } from '../vnc/probe';
 import { diagnoseVncEnvironment } from '../vnc/diagnostics';
-import { getVncRequirements } from '../vnc/requirements';
+import { getVncRequirements, resolveImplementation } from '../vnc/requirements';
 import { ensureSession, getSession, stopSession } from '../vnc/sessions';
 
 function num(value: unknown): number {
@@ -59,7 +59,7 @@ async function buildStatus(hostId: number, start: boolean): Promise<VncStatus | 
     implementation: host.vnc_implementation,
     display: host.vnc_display,
     managed: false,
-    requirements: getVncRequirements(diagnostics),
+    requirements: getVncRequirements(diagnostics, resolveImplementation(diagnostics, host)),
   };
 }
 
@@ -82,7 +82,7 @@ export async function vncRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(502).send({ error: `diagnostics failed: ${err.message}` });
     });
     if (!diagnostics) return reply.code(502).send({ error: 'diagnostics unavailable' });
-    diagnostics.requirements = getVncRequirements(diagnostics);
+    diagnostics.requirements = getVncRequirements(diagnostics, resolveImplementation(diagnostics, host));
     return diagnostics;
   });
 

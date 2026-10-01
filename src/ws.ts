@@ -1,4 +1,5 @@
 import type { ClientMessage, ServerMessage } from '@shared/protocol';
+import { getApiToken } from './api';
 
 export interface TerminalSocket {
   send: (msg: ClientMessage) => void;
@@ -12,7 +13,8 @@ export function connectTerminal(
   onClose: () => void,
 ): TerminalSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${window.location.host}/ws/terminal`);
+  const token = getApiToken();
+  const ws = new WebSocket(`${proto}://${window.location.host}/ws/terminal${token ? `?token=${encodeURIComponent(token)}` : ''}`);
 
   ws.onmessage = (event) => {
     try {

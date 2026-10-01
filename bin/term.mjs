@@ -10,10 +10,17 @@
 import WebSocket from 'ws';
 
 function parseArgs(argv) {
-  const opts = { host: null, server: process.env.TERMUS_SERVER || 'http://127.0.0.1:3001', trust: false, verbose: false };
+  const opts = {
+    host: null,
+    server: process.env.TERMUS_SERVER || 'http://127.0.0.1:3001',
+    token: process.env.TERMUS_TOKEN || null,
+    trust: false,
+    verbose: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--server' || a === '-s') opts.server = String(argv[++i] ?? '');
+    else if (a === '--token' || a === '-T') opts.token = String(argv[++i] ?? '');
     else if (a === '--trust' || a === '-t') opts.trust = true;
     else if (a === '--verbose' || a === '-v') opts.verbose = true;
     else if (a === '--help' || a === '-h') opts.help = true;
@@ -36,6 +43,7 @@ function help() {
       '',
       'options:',
       '  -s, --server URL   server base URL (default $TERMUS_SERVER or http://127.0.0.1:3001)',
+      '  -T, --token TOKEN  bearer token (default $TERMUS_TOKEN) when the server requires auth',
       '  -t, --trust        auto-trust new/mismatched host keys',
       '  -v, --verbose      log protocol status to stderr',
       '  -h, --help         show this help',
@@ -50,9 +58,10 @@ if (opts.help || !opts.host) {
   process.exit(opts.help ? 0 : 1);
 }
 
-async function resolveHost(server, selector) {
-  const res = await fetch(`${server.replace(/\/$/, '')}/api/hosts`);
-  if (!res.ok) die(`failed to list hosts (HTTP ${res.status})`);
+async function resolveHost(server, selector, token) {
+  const headers = token ? { authorization: `Bearer ${token}` } : {};
+  const res = await fetch(`${server.replace(/\/$/, '')}/api/hosts`, { headers });
+  if (!res.ok) die(`failed to list hosts (HTTP ${res.status})${token ? '' : ' — is the server running with auth armed? use -T/--token'}`);
   const hosts = await res.json();
   if (Number.isInteger(Number(selector))) {
     return hosts.find((h) => h.id === Number(selector)) ?? null;
@@ -60,14 +69,15 @@ async function resolveHost(server, selector) {
   return hosts.find((h) => h.name === selector) ?? null;
 }
 
-const host = await resolveHost(opts.server, opts.host).catch((e) => die(`server error: ${e.message}`));
+const host = await resolveHost(opts.server, opts.host, opts.token).catch((e) => die(`server error: ${e.message}`));
 if (!host) die(`host '${opts.host}' not found`);
 
 const serverBase = opts.server.replace(/\/$/, '');
 const wsUrl =
   (serverBase.startsWith('https') ? 'wss://' : 'ws://') +
   serverBase.replace(/^https?:\/\//, '') +
-  '/ws/terminal';
+  '/ws/terminal' +
+  (opts.token ? `?token=${encodeURIComponent(opts.token)}` : '');
 
 const log = (m) => {
   if (opts.verbose) process.stderr.write(`term: ${m}\n`);

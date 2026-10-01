@@ -49,3 +49,46 @@ export async function stopVirtualDesktop(
   if (!cfg.ssh) return;
   await execRemote(cfg.ssh, `vncserver -kill :${display} 2>/dev/null || true`, 15000);
 }
+
+export async function startExistingDesktop(
+  database: Database.Database,
+  host: Host,
+  opts: { port: number; display: number },
+): Promise<ManagedVnc> {
+  const cfg = resolveVncConfig(database, host);
+  if (!cfg.ssh) throw new Error('existing desktop startup requires an SSH transport');
+  const { display, port } = opts;
+  const command = [
+    `pkill -f "x11vnc.*-rfbport ${port}" 2>/dev/null || true`,
+    `nohup x11vnc -display :${display} -rfbport ${port} -localhost -nopw -forever -shared >/tmp/termius-free-x11vnc-${port}.log 2>&1 & echo $!`,
+  ].join('; ');
+  const { code, stdout, stderr } = await execRemote(cfg.ssh, command, 30000);
+  if (code !== 0) {
+    throw new Error(stderr.trim() || `x11vnc exited with code ${code}`);
+  }
+  const pidLine = stdout.trim().split('\n').pop() ?? '';
+  const pid = Number(pidLine);
+
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const probe = await probeVnc(() => openVncStream(database, host, port), 1500);
+    if (probe.running) {
+      return { display, pid: Number.isInteger(pid) && pid > 0 ? pid : null, port };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`x11vnc started on display :${display} but port ${port} never began listening`);
+}
+
+export async function stopExistingDesktop(
+  database: Database.Database,
+  host: Host,
+  pid: number | null,
+): Promise<void> {
+  const cfg = resolveVncConfig(database, host);
+  if (!cfg.ssh) return;
+  if (pid && pid > 0) {
+    await execRemote(cfg.ssh, `kill ${pid} 2>/dev/null || true`, 15000);
+  } else {
+    await execRemote(cfg.ssh, `pkill -f "x11vnc.*-localhost" 2>/dev/null || true`, 15000);
+  }
+}

@@ -11,7 +11,13 @@ import { isRfbGreeting, probeVnc } from '../server/vnc/probe';
 import { connectNet, openVncStream, type VncStream } from '../server/vnc/transport';
 import { resolveVncConfig } from '../server/vnc/config';
 import { parseDiagnostics } from '../server/vnc/diagnostics';
-import { desktopInstallCommands, getVncRequirements, vncInstallCommands } from '../server/vnc/requirements';
+import {
+  desktopInstallCommands,
+  getVncRequirements,
+  resolveImplementation,
+  vncInstallCommands,
+  x11vncInstallCommands,
+} from '../server/vnc/requirements';
 import { enterSession, ensureSession, getSession, leaveSession, stopSession } from '../server/vnc/sessions';
 import { buildApp } from '../server/index';
 import { startSshServer } from './helpers/ssh-server';
@@ -84,18 +90,51 @@ const DIAG_UBUNTU = [
   '0',
 ].join('\n');
 
-function makeDiagnostics(over: Partial<VncDiagnostics['vnc']> & Partial<VncDiagnostics['desktop']> = {}): VncDiagnostics {
+type DiagOver = Omit<Partial<VncDiagnostics['vnc']>, 'display'> &
+  Omit<Partial<VncDiagnostics['desktop']>, 'display'> & { display?: string | number };
+
+function makeDiagnostics(over: DiagOver = {}): VncDiagnostics {
   const base: VncDiagnostics = {
     os: 'Ubuntu 22.04.4 LTS',
     distribution: 'Ubuntu 22.04.4 LTS',
     architecture: 'x86_64',
-    vnc: { installed: true, running: false, implementation: 'tigervnc', port: 5900, display: undefined },
+    vnc: { installed: true, running: false, implementation: 'tigervnc', hasX11vnc: false, port: 5900, display: undefined },
     desktop: { installed: true, environment: 'xfce', displayServer: 'x11' },
     permissions: { canStartVnc: true, canAccessDisplay: true },
     requirements: [],
   };
-  return { ...base, vnc: { ...base.vnc, ...over }, desktop: { ...base.desktop, ...over } };
+  return {
+    ...base,
+    vnc: { ...base.vnc, ...over, display: over.display as VncDiagnostics['vnc']['display'] },
+    desktop: { ...base.desktop, ...over, display: over.display as VncDiagnostics['desktop']['display'] },
+  };
 }
+
+const DIAG_X11VNC = [
+  '==os==',
+  'Ubuntu 22.04.4 LTS',
+  '==arch==',
+  'x86_64',
+  '==bins==',
+  '/usr/bin/x11vnc',
+  '==version==',
+  'x11vnc V6.0.5',
+  '==listen==',
+  '',
+  '==processes==',
+  '',
+  '==xsessions==',
+  'xfce4.desktop',
+  '==sessiontype==',
+  'Type=x11',
+  '==display==',
+  ':0',
+  '==xdisplays==',
+  '0',
+  '1',
+  '==uid==',
+  '1000',
+].join('\n');
 
 test('isRfbGreeting detects the RFB header', () => {
   assert.equal(isRfbGreeting(Buffer.from('RFB 003.008\n')), true);
@@ -148,6 +187,21 @@ test('parseDiagnostics parses a full diagnostic script output', () => {
   assert.equal(parsed.permissions.canStartVnc, true);
 });
 
+test('parseDiagnostics detects x11vnc and the live X display', () => {
+  const parsed = parseDiagnostics(DIAG_X11VNC, 5900);
+  assert.equal(parsed.vnc.hasX11vnc, true);
+  assert.equal(parsed.vnc.implementation, 'x11vnc');
+  assert.equal(parsed.desktop.display, ':0');
+  assert.deepEqual(parsed.desktop.displays, [0, 1]);
+  assert.equal(parsed.permissions.canAccessDisplay, true);
+});
+
+test('parseDiagnostics flags an inaccessible display for unprivileged users', () => {
+  const output = DIAG_X11VNC.replace('==display==\n:0', '==display==\n:7');
+  const parsed = parseDiagnostics(output, 5900);
+  assert.equal(parsed.permissions.canAccessDisplay, false);
+});
+
 test('parseDiagnostics detects a running VNC from listening ports', () => {
   const output = DIAG_UBUNTU.replace('==listen==\n\n', '==listen==\n5900\n');
   const parsed = parseDiagnostics(output, 5900);
@@ -161,6 +215,14 @@ test('vncInstallCommands are distro-specific', () => {
   assert.deepEqual(vncInstallCommands('Alpine Linux v3.19'), ['apk add tigervnc']);
   assert.deepEqual(desktopInstallCommands('Arch Linux'), ['pacman -S --noconfirm xfce4 xfce4-goodies']);
   assert.deepEqual(vncInstallCommands('FreeBSD 14'), []);
+});
+
+test('x11vncInstallCommands are distro-specific', () => {
+  assert.deepEqual(x11vncInstallCommands('Ubuntu 22.04.4 LTS'), ['apt-get update', 'apt-get install -y x11vnc']);
+  assert.deepEqual(x11vncInstallCommands('Fedora Linux 39'), ['dnf install -y x11vnc']);
+  assert.deepEqual(x11vncInstallCommands('Arch Linux'), ['pacman -S --noconfirm x11vnc']);
+  assert.deepEqual(x11vncInstallCommands('Alpine Linux v3.19'), ['apk add x11vnc']);
+  assert.deepEqual(x11vncInstallCommands('FreeBSD 14'), []);
 });
 
 test('getVncRequirements is empty when VNC is already running', () => {
@@ -184,6 +246,45 @@ test('getVncRequirements lists missing pieces with install commands', () => {
 test('getVncRequirements flags wayland sessions', () => {
   const requirements = getVncRequirements(makeDiagnostics({ displayServer: 'wayland' }));
   assert.ok(requirements.some((r) => r.type === 'display_unavailable'));
+});
+
+test('resolveImplementation honours explicit configuration', () => {
+  const host = { vnc_implementation: 'x11vnc', vnc_desktop_mode: 'auto' } as const;
+  assert.equal(resolveImplementation(null, host), 'x11vnc');
+  assert.equal(resolveImplementation(makeDiagnostics(), host), 'x11vnc');
+  const tiger = { vnc_implementation: 'tigervnc', vnc_desktop_mode: 'auto' } as const;
+  assert.equal(resolveImplementation(makeDiagnostics({ hasX11vnc: true, display: ':0', displays: [0] }), tiger), 'tigervnc');
+});
+
+test('resolveImplementation picks x11vnc only for accessible X11 sessions with x11vnc installed', () => {
+  const auto = { vnc_implementation: 'auto', vnc_desktop_mode: 'auto' } as const;
+  const x11 = makeDiagnostics({ hasX11vnc: true, display: ':0', displays: [0, 1] });
+  assert.equal(resolveImplementation(x11, auto), 'x11vnc');
+  assert.equal(resolveImplementation(makeDiagnostics({ hasX11vnc: true, displayServer: 'wayland' }), auto), 'tigervnc');
+  assert.equal(resolveImplementation(makeDiagnostics({ display: ':0', displays: [0, 1] }), auto), 'tigervnc');
+  const virtual = { vnc_implementation: 'auto', vnc_desktop_mode: 'virtual' } as const;
+  assert.equal(resolveImplementation(x11, virtual), 'tigervnc');
+  assert.equal(resolveImplementation(null, auto), 'tigervnc');
+});
+
+test('getVncRequirements x11vnc reports a missing x11vnc binary', () => {
+  const requirements = getVncRequirements(makeDiagnostics({ hasX11vnc: false }), 'x11vnc');
+  const missing = requirements.find((r) => r.type === 'x11vnc_missing');
+  assert.ok(missing);
+  const cmds = missing && 'installCommands' in missing ? missing.installCommands : undefined;
+  assert.deepEqual(cmds, ['apt-get update', 'apt-get install -y x11vnc']);
+});
+
+test('getVncRequirements x11vnc reports an unavailable display', () => {
+  const wayland = getVncRequirements(makeDiagnostics({ hasX11vnc: true, displayServer: 'wayland' }), 'x11vnc');
+  assert.ok(wayland.some((r) => r.type === 'display_unavailable'));
+  const noDisplays = getVncRequirements(makeDiagnostics({ hasX11vnc: true, displays: [] }), 'x11vnc');
+  assert.ok(noDisplays.some((r) => r.type === 'display_unavailable'));
+});
+
+test('getVncRequirements x11vnc is empty when the desktop is ready', () => {
+  const requirements = getVncRequirements(makeDiagnostics({ hasX11vnc: true, display: ':0', displays: [0, 1] }), 'x11vnc');
+  assert.deepEqual(requirements, []);
 });
 
 test('getVncRequirements reports unsupported environment without diagnostics', () => {
@@ -392,6 +493,92 @@ test('ensureSession starts a virtual desktop and tracks enter/leave/stop', async
     assert.equal(getSession(host.id), undefined);
     assert.equal(killCommands.length, 1);
     assert.match(killCommands[0], /vncserver -kill :1/);
+  } finally {
+    for (const f of fakes) await f.close();
+    cleanup();
+    await ssh.close();
+  }
+});
+
+test('ensureSession starts x11vnc on the existing X11 desktop and stops it by pid', async () => {
+  const { db, cleanup } = tempDb();
+  const fakes: FakeVnc[] = [];
+  const startCommands: string[] = [];
+  const killCommands: string[] = [];
+  const fakePort = await new Promise<number>((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const p = (probe.address() as { port: number }).port;
+      probe.close(() => resolve(p));
+    });
+  });
+  const ssh = await startSshServer({
+    onExec: (command, stream) => {
+      if (command.includes('nohup x11vnc')) {
+        startCommands.push(command);
+        stream.write('7777\n');
+        stream.end();
+        void startFakeVnc(fakePort).then((s) => {
+          fakes.push(s);
+        });
+        return;
+      }
+      if (command.startsWith('kill ')) {
+        killCommands.push(command);
+        stream.end();
+        return;
+      }
+      stream.write(DIAG_X11VNC);
+      stream.end();
+    },
+    onTcpip: (_host, port, stream) => {
+      const upstream = net.connect({ host: '127.0.0.1', port });
+      upstream.on('error', () => {
+        try {
+          stream.destroy();
+        } catch {
+          /* already closed */
+        }
+      });
+      stream.on('close', () => upstream.destroy());
+      upstream.on('close', () => {
+        try {
+          stream.end();
+        } catch {
+          /* already closed */
+        }
+      });
+      upstream.pipe(stream);
+      stream.pipe(upstream);
+    },
+  });
+  try {
+    const host = createHost(db, {
+      name: 'x11vnc',
+      host: '127.0.0.1',
+      port: ssh.port,
+      username: 'testuser',
+      password: 'testpass',
+      connection_type: 'vnc',
+      vnc_transport: 'ssh',
+      vnc_port: fakePort,
+      vnc_implementation: 'x11vnc',
+    });
+    const result = await ensureSession(host.id, { start: true });
+    assert.ok(result.session, 'expected a session to be created');
+    assert.equal(result.session.managed, true);
+    assert.equal(result.session.implementation, 'x11vnc');
+    assert.equal(result.session.display, 0);
+    assert.equal(result.session.pid, 7777);
+    assert.equal(result.requirements.length, 0);
+    assert.equal(startCommands.length, 1);
+    assert.match(startCommands[0], /x11vnc -display :0 -rfbport \d+ -localhost/);
+
+    await stopSession(host.id);
+    assert.equal(getSession(host.id), undefined);
+    assert.equal(killCommands.length, 1);
+    assert.match(killCommands[0], /kill 7777/);
   } finally {
     for (const f of fakes) await f.close();
     cleanup();

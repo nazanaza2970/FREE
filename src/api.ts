@@ -1,4 +1,6 @@
 import type {
+  AppPassword,
+  AppPasswordCreated,
   AppSettings,
   AuditLog,
   GroupInput,
@@ -19,10 +21,32 @@ import type {
   VncStatus,
 } from '@shared/types';
 
+const TOKEN_KEY = 'tfp_api_token';
+
+export function getApiToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setApiToken(token: string | null): void {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getApiToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
     ...init,
+    headers: { ...headers, ...(init?.headers as Record<string, string> | undefined) },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -98,4 +122,32 @@ export const api = {
   vncEnsure: (hostId: number, start = false) =>
     request<VncStatus>(`/api/vnc/${hostId}/ensure`, { method: 'POST', body: json({ start }) }),
   vncStop: (hostId: number) => request<VncStatus>(`/api/vnc/${hostId}/stop`, { method: 'POST' }),
+
+  listTokens: () => request<AppPassword[]>('/api/tokens'),
+  createToken: (input: { name: string; scope?: string }) =>
+    request<AppPasswordCreated>('/api/tokens', { method: 'POST', body: json(input) }),
+  revokeToken: (id: number) => request<void>(`/api/tokens/${id}`, { method: 'DELETE' }),
+  verifyToken: () => request<{ id: number; name: string; scope: string }>('/api/tokens/verify'),
 };
+
+/**
+ * Ensures a usable API token: verifies the stored one, and on first run
+ * creates the bootstrap token (allowed by the server while no token exists).
+ */
+export async function ensureApiToken(): Promise<boolean> {
+  if (getApiToken()) {
+    try {
+      await api.verifyToken();
+      return true;
+    } catch {
+      setApiToken(null);
+    }
+  }
+  try {
+    const created = await api.createToken({ name: 'browser', scope: '*' });
+    setApiToken(created.token);
+    return true;
+  } catch {
+    return false;
+  }
+}

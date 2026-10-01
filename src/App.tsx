@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Host, HostGroup, HostInput, SessionState, Theme } from '@shared/types';
 import { DEFAULT_COLORS, toXtermTheme } from '@shared/theme';
 import { comboMatches, pushClipboardHistory } from '@shared/shortcuts';
-import { api } from './api';
+import { api, ensureApiToken, setApiToken } from './api';
 import { escapePayload, loadClipboardHistory, loadKeymap, loadTermSettings, saveClipboardHistory } from './termSettings';
 import HostList from './components/HostList';
 import HostForm from './components/HostForm';
@@ -20,9 +20,10 @@ import {
   SnippetsPanel,
   SyncPanel,
   ThemesPanel,
+  TokensPanel,
 } from './components/panels';
 
-type PanelKey = 'terminal' | 'files' | 'snippets' | 'themes' | 'audit' | 'forwards' | 'settings' | 'sync';
+type PanelKey = 'terminal' | 'files' | 'snippets' | 'themes' | 'audit' | 'forwards' | 'settings' | 'sync' | 'tokens';
 
 const PANELS: { key: PanelKey; label: string }[] = [
   { key: 'terminal', label: 'Terminal' },
@@ -32,6 +33,7 @@ const PANELS: { key: PanelKey; label: string }[] = [
   { key: 'forwards', label: 'Forwards' },
   { key: 'audit', label: 'Audit' },
   { key: 'sync', label: 'Sync' },
+  { key: 'tokens', label: 'Tokens' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -53,6 +55,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [launcherOpen, setLauncherOpen] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [tokenDraft, setTokenDraft] = useState('');
   const [themes, setThemes] = useState<Theme[]>([]);
   const [termSettings, setTermSettings] = useState(loadTermSettings);
   const writersRef = useRef(new Map<number, (data: string) => void>());
@@ -145,8 +149,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    refresh();
+    void ensureApiToken().then((ok) => {
+      setLocked(!ok);
+      if (ok) refresh();
+    });
   }, [refresh]);
+
+  const tryUnlock = () => {
+    const value = tokenDraft.trim();
+    if (!value) return;
+    setApiToken(value);
+    void ensureApiToken().then((ok) => {
+      setLocked(!ok);
+      if (ok) refresh();
+    });
+  };
 
   const openTab = useCallback((host: Host) => {
     setTabs((prev) => {
@@ -254,6 +271,28 @@ export default function App() {
     if (!window.confirm(`Delete group "${group.name}"?${detail ? ` ${detail}.` : ''}`)) return;
     void runGroupAction(() => api.deleteGroup(group.id), 'Failed to delete group');
   };
+
+  if (locked) {
+    return (
+      <div className="empty" style={{ margin: 'auto', maxWidth: 440, textAlign: 'center' }}>
+        <h2>Locked</h2>
+        <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>
+          This app instance is protected, but no valid token is stored in this browser. Paste a token to
+          unlock.
+        </p>
+        <input
+          value={tokenDraft}
+          onChange={(e) => setTokenDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') tryUnlock();
+          }}
+          placeholder="tfp_…"
+          style={{ width: '100%', marginBottom: 8 }}
+        />
+        <button onClick={tryUnlock}>Unlock</button>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -375,6 +414,11 @@ export default function App() {
             {panel === 'sync' ? (
               <div className="panel" style={{ position: 'absolute', inset: 0, background: 'var(--bg)' }}>
                 <SyncPanel />
+              </div>
+            ) : null}
+            {panel === 'tokens' ? (
+              <div className="panel" style={{ position: 'absolute', inset: 0, background: 'var(--bg)' }}>
+                <TokensPanel />
               </div>
             ) : null}
             {panel === 'settings' ? (

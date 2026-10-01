@@ -5,6 +5,7 @@ import fastifyStatic from '@fastify/static';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { getDb } from './db';
+import { installApiAuth } from './auth';
 import { registerTerminalRoutes } from './terminal';
 import { registerSftpRoutes } from './sftp';
 import { hostRoutes } from './routes/hosts';
@@ -48,6 +49,8 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   app.register(syncRoutes, { prefix: '/api/sync' });
   app.register(vncRoutes, { prefix: '/api/vnc' });
 
+  installApiAuth(app);
+
   registerTerminalRoutes(app);
   registerSftpRoutes(app);
   registerVncWebSocket(app);
@@ -72,7 +75,7 @@ const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(pro
 if (isMain) {
   getDb();
   const port = Number(process.env.PORT || 3001);
-  const host = process.env.HOST || '0.0.0.0';
+  const host = process.env.HOST || '127.0.0.1';
   void buildApp()
     .then((app) => app.listen({ port, host }))
     .catch((err) => {

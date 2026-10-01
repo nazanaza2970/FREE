@@ -4,7 +4,7 @@ export type ConnectionType = 'ssh' | 'telnet' | 'mosh' | 'vnc';
 
 export type VncTransport = 'ssh' | 'direct';
 export type VncDesktopMode = 'auto' | 'virtual';
-export type VncImplementation = 'auto' | 'tigervnc';
+export type VncImplementation = 'auto' | 'tigervnc' | 'x11vnc';
 
 export type SessionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -235,6 +235,7 @@ export interface SyncMergeResult {
 
 export type VncRequirement =
   | { type: 'vnc_server_missing'; severity: 'blocking'; message: string; installCommands?: string[] }
+  | { type: 'x11vnc_missing'; severity: 'blocking'; message: string; installCommands?: string[] }
   | { type: 'desktop_missing'; severity: 'blocking'; message: string; installCommands?: string[] }
   | { type: 'display_unavailable'; severity: 'blocking'; message: string }
   | { type: 'permission_denied'; severity: 'blocking'; message: string }
@@ -248,6 +249,7 @@ export interface VncDiagnostics {
     installed: boolean;
     running: boolean;
     implementation?: 'tigervnc' | 'x11vnc' | 'unknown';
+    hasX11vnc: boolean;
     port?: number;
     display?: number;
   };
@@ -255,6 +257,8 @@ export interface VncDiagnostics {
     installed: boolean;
     environment?: 'xfce' | 'gnome' | 'kde' | 'mate' | 'other';
     displayServer?: 'x11' | 'wayland' | 'unknown';
+    display?: string;
+    displays?: number[];
   };
   permissions: {
     canStartVnc: boolean;

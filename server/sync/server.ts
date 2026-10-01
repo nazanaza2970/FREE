@@ -175,7 +175,7 @@ export function buildSyncApp(options: SyncServerOptions = {}): FastifyInstance {
 }
 
 function parseArgs(argv: string[]): { port: number; host: string; db: string } {
-  const out = { port: Number(process.env.PORT || 3901), host: '0.0.0.0', db: DEFAULT_DB_PATH };
+  const out = { port: Number(process.env.PORT || 3901), host: process.env.HOST || '127.0.0.1', db: DEFAULT_DB_PATH };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port' || argv[i] === '-p') out.port = Number(argv[++i]);
     else if (argv[i] === '--host' || argv[i] === '-H') out.host = String(argv[++i]);
