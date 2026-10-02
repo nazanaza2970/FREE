@@ -1,6 +1,5 @@
 node_modules/
 dist/
-portable/
 data/
 *.db
 *.db-journal
