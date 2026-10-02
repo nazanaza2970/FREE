@@ -1,5 +1,5 @@
 import ssh2 from 'ssh2';
-import type Database from 'better-sqlite3';
+import type Database from '../sqlite';
 import { getDb, getKeyMaterial } from '../db';
 
 const { AgentProtocol, BaseAgent, utils } = ssh2;

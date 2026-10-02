@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { WebSocket } from 'ws';
 import { createHost, initDb, setDb } from '../server/db';
-import type Database from 'better-sqlite3';
+import type Database from '../server/sqlite';
 import { isRfbGreeting, probeVnc } from '../server/vnc/probe';
 import { connectNet, openVncStream, type VncStream } from '../server/vnc/transport';
 import { resolveVncConfig } from '../server/vnc/config';

@@ -31,7 +31,7 @@ function startSvc(port: number): Promise<http.Server> {
   });
 }
 
-async function withForwardedHost(fn: (hostId: number, db: import('better-sqlite3').Database) => Promise<void>): Promise<void> {
+async function withForwardedHost(fn: (hostId: number, db: import('../server/sqlite').Database.Database) => Promise<void>): Promise<void> {
   process.env.NODE_ENV = 'test';
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tf-fwd-'));
   const db = initDb(path.join(dir, 'test.db'));

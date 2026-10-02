@@ -1,6 +1,6 @@
 import net from 'node:net';
 import type { Duplex } from 'node:stream';
-import type Database from 'better-sqlite3';
+import type Database from '../sqlite';
 import type { Client } from 'ssh2';
 import type { Host } from '../../shared/types';
 import { resolveVncConfig } from './config';

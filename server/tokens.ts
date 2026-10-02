@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type Database from 'better-sqlite3';
+import type Database from './sqlite';
 import { createAppPassword, getAppPasswordByHash, getDb, touchAppPassword } from './db';
 import type { AppPassword } from '../shared/types';
 

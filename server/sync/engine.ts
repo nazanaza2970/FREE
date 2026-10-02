@@ -7,7 +7,7 @@ import {
   getMetaRev,
   recordMeta,
 } from '../db';
-import type { Database } from 'better-sqlite3';
+import type Database from '../sqlite';
 import type { SyncEntity, SyncMergeResult, SyncState } from '../../shared/types';
 
 export interface SyncClientConfig {
@@ -66,7 +66,7 @@ export class SyncClient {
  * those are reported so the UI can show the queue.
  */
 export async function syncNow(
-  database: Database = getDb(),
+  database: Database.Database = getDb(),
   config: SyncClientConfig = {
     serverUrl: '',
     deviceId: '',

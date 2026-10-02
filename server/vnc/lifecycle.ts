@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../sqlite';
 import type { Host } from '../../shared/types';
 import { resolveVncConfig } from './config';
 import { execRemote } from './ssh';

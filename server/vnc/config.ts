@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../sqlite';
 import { getHost } from '../db';
 import type { Host, VncDesktopMode, VncImplementation, VncTransport } from '../../shared/types';
 

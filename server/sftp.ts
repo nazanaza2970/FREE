@@ -17,6 +17,7 @@ interface Transfer {
   name: string;
   transferred: number;
   total: number;
+  cancelled?: boolean;
 }
 
 interface SftpSession {
@@ -224,7 +225,7 @@ function startUpload(ws: WebSocket, session: SftpSession, id: string, path: stri
   session.transfers.set(id, transfer);
   // ssh2's WriteStream omits 'finish' under backpressure; 'close' is reliable post-end.
   stream.on('close', () => {
-    if (!session.transfers.has(id)) return; // cancelled or errored
+    if (!session.transfers.has(id) || transfer.cancelled) return; // cancelled or errored
     session.transfers.delete(id);
     const bytes = transfer.transferred;
     send(ws, { type: 'done', id, op: 'upload', bytes });
@@ -240,14 +241,22 @@ function startUpload(ws: WebSocket, session: SftpSession, id: string, path: stri
 function cancelTransfer(ws: WebSocket, session: SftpSession, id: string): void {
   const transfer = session.transfers.get(id);
   if (!transfer) return;
-  session.transfers.delete(id);
+  const onSettled = () => {
+    if (!session.transfers.has(id)) return;
+    session.transfers.delete(id);
+    addAudit(getDb(), 'sftp.cancel', session.hostId, `${transfer.op} ${transfer.name} @ ${transfer.transferred}/${transfer.total}`);
+    send(ws, { type: 'done', id, op: transfer.op, bytes: transfer.transferred });
+  };
+  transfer.stream.once('close', onSettled);
+  transfer.stream.once('error', onSettled);
   try {
-    transfer.stream.destroy();
+    // Upload: end() flushes buffered bytes so a partial file reliably lands on
+    // disk (destroy() would drop unflushed data). Download: just stop reading.
+    if (transfer.op === 'upload') (transfer.stream as Writable).end();
+    else transfer.stream.destroy();
   } catch {
-    /* already closed */
+    onSettled();
   }
-  addAudit(getDb(), 'sftp.cancel', session.hostId, `${transfer.op} ${transfer.name} @ ${transfer.transferred}/${transfer.total}`);
-  send(ws, { type: 'done', id, op: transfer.op, bytes: transfer.transferred });
 }
 
 function handleClientMessage(ws: WebSocket, session: SftpSession, msg: SftpClientMessage, onDead: () => void): void {
