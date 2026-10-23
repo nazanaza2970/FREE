@@ -23,6 +23,39 @@ import type {
 
 const TOKEN_KEY = 'tfp_api_token';
 
+/**
+ * Absolute base URL of the Rust API. Empty in plain-browser/dev mode (same
+ * origin, Vite proxy); the loopback URL handed over by Tauri in the desktop
+ * app.
+ */
+let apiBase = '';
+
+/** Resolves the API base via Tauri on desktop; must run before the first request. */
+export async function initApiBase(): Promise<void> {
+  if (apiBase) return;
+  const w = window as unknown as { __TAURI_INTERNALS__?: unknown };
+  if (!w.__TAURI_INTERNALS__) return;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const info = await invoke<{ base_url: string; token: string | null }>('get_api_info');
+    apiBase = info.base_url.replace(/\/$/, '');
+    if (info.token && !getApiToken()) setApiToken(info.token);
+  } catch {
+    apiBase = '';
+  }
+}
+
+export function getApiBase(): string {
+  return apiBase;
+}
+
+/** Absolute ws:// base for WebSocket endpoints. */
+export function wsBase(): string {
+  if (apiBase) return apiBase.replace(/^http/, 'ws');
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${window.location.host}`;
+}
+
 export function getApiToken(): string | null {
   try {
     return localStorage.getItem(TOKEN_KEY);
@@ -44,7 +77,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const token = getApiToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(path, {
+  const res = await fetch(`${apiBase}${path}`, {
     ...init,
     headers: { ...headers, ...(init?.headers as Record<string, string> | undefined) },
   });

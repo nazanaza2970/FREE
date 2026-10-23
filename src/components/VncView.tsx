@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Host, SessionState, VncRequirement } from '@shared/types';
-import { api, getApiToken } from '../api';
+import { api, getApiToken, wsBase } from '../api';
 import VncSetupDisclaimer from './VncSetupDisclaimer';
 
 type RfbCtor = typeof import('@novnc/novnc').default;
@@ -27,9 +27,8 @@ interface Props {
 }
 
 function wsUrl(hostId: number): string {
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const token = getApiToken();
-  return `${proto}://${window.location.host}/ws/vnc?host_id=${hostId}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+  return `${wsBase()}/ws/vnc?host_id=${hostId}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
 }
 
 export default function VncView({ host, sessionId, active, onStatus, onReconnect }: Props) {

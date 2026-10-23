@@ -1,10 +1,39 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
+*.log
+
+# Rust/Tauri
+src-tauri/target/
+
+# Database & runtime data
 data/
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
+~/.termius-free/
+
+# Fonts (bundled in src/assets/fonts, but ignore temp downloads)
+*.zip
+inter.zip
+jbmono.zip
+
+# Editor/OS
 .DS_Store
-*.log
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Misc
 rebranding.md
+*.local
+.env
+.env.local
+*.pem
+*.key
+id_rsa
+id_ed25519

@@ -4,28 +4,25 @@
   "private": true,
   "description": "FREE's Remote Everything Environment — a free, all-in-one SSH, SFTP, port forwarding, and remote synchronization workspace.",
   "type": "module",
-  "bin": {
-    "term": "bin/term.mjs",
-    "free-sync-server": "bin/sync-server.mjs"
-  },
   "scripts": {
     "dev": "concurrently -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
-    "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
     "build": "tsc && vite build",
-    "build:portable": "node scripts/build-portable.mjs",
-    "start": "NODE_ENV=production tsx server/index.ts",
-    "start:portable": "node portable/server/index.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "term": "node bin/term.mjs",
-    "sync:server": "tsx server/sync/server.ts"
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "build:desktop": "node scripts/build-desktop.mjs",
+    "build:desktop:linux": "node scripts/build-desktop.mjs linux",
+    "build:desktop:windows": "node scripts/build-desktop.mjs windows"
   },
   "dependencies": {
     "@fastify/cors": "^8.5.0",
     "@fastify/static": "^6.12.0",
     "@fastify/websocket": "^8.3.1",
     "@novnc/novnc": "^1.7.0",
+    "@tauri-apps/api": "^2.12.4",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
@@ -37,10 +34,11 @@
     "ws": "^8.17.0"
   },
   "devDependencies": {
-    "@types/sql.js": "^1.4.9",
+    "@tauri-apps/cli": "^2.12.3",
     "@types/node": "^18.19.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@types/sql.js": "^1.4.9",
     "@types/ssh2": "^1.11.0",
     "@types/ws": "^8.5.10",
     "@vitejs/plugin-react": "^4.3.1",

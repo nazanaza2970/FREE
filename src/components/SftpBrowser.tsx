@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Host } from '@shared/types';
 import type { SftpClientMessage, SftpEntry, SftpServerMessage } from '@shared/sftp';
 import { SFTP_PATH } from '@shared/sftp';
-import { getApiToken } from '../api';
+import { getApiToken, wsBase } from '../api';
 import { decodeBase64 } from '@shared/protocol';
 
 const CHUNK = 256 * 1024;
@@ -70,9 +70,8 @@ export default function SftpBrowser({ host }: Props) {
   const connect = useCallback(() => {
     setStatus('connecting');
     setEntries(null);
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const token = getApiToken();
-    const ws = new WebSocket(`${proto}://${location.host}${SFTP_PATH}${token ? `?token=${encodeURIComponent(token)}` : ''}`);
+    const ws = new WebSocket(`${wsBase()}${SFTP_PATH}${token ? `?token=${encodeURIComponent(token)}` : ''}`);
     wsRef.current = ws;
 
     ws.onopen = () => {

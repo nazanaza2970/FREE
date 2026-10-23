@@ -4,7 +4,7 @@ import { extractVariables } from '@shared/snippets';
 import { DEFAULT_COLORS, exportThemesJson, parseThemesImport } from '@shared/theme';
 import type { ClipboardEntry } from '@shared/shortcuts';
 import { parseCombo } from '@shared/shortcuts';
-import { api } from '../api';
+import { api, getApiBase, getApiToken } from '../api';
 import type { KeyMapping, TermSettings } from '../termSettings';
 import {
   loadClipboardHistory,
@@ -345,7 +345,9 @@ export function AuditPanel() {
   const load = () => api.listAudit(100).then(setItems).catch(() => setItems([]));
   useEffect(() => {
     load();
-    const es = new EventSource('/api/audit/stream');
+    const token = getApiToken();
+    const streamUrl = `${getApiBase()}/api/audit/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const es = new EventSource(streamUrl);
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);
     es.onmessage = (event) => {
@@ -359,11 +361,18 @@ export function AuditPanel() {
     return () => es.close();
   }, []);
 
-  const exportJsonl = () => {
+  const exportJsonl = async () => {
+    const token = getApiToken();
+    const res = await fetch(`${getApiBase()}/api/audit/export?limit=1000`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    }).catch(() => null);
+    if (!res?.ok) return;
+    const blob = await res.blob();
     const a = document.createElement('a');
-    a.href = '/api/audit/export?limit=1000';
+    a.href = URL.createObjectURL(blob);
     a.download = 'free-audit.log';
     a.click();
+    URL.revokeObjectURL(a.href);
   };
 
   return (
