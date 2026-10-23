@@ -128,7 +128,7 @@ fn build_core_state(
     let conn = db::init_db(db_path)?;
     let keystore = crypto::Keystore::load(config_dir)?;
     let (audit_tx, _) = tokio::sync::broadcast::channel(256);
-    let bootstrap = tokens::ensure_bootstrap_token(&conn);
+    let bootstrap = tokens::ensure_desktop_token(&conn, config_dir);
     Ok(AppState {
         db: Arc::new(Mutex::new(conn)),
         keystore: Arc::new(keystore),
@@ -193,7 +193,15 @@ fn run_recover() -> Result<(), String> {
     let (token, hash) = tokens::generate_token();
     db::create_app_password(&conn, "recovery-cli", "*", &hash).map_err(|e| e.to_string())?;
     let _ = db::add_audit(&conn, "token.create", None, "recovery-cli (scope: *)");
+    // The installed app is a GUI-subsystem binary, so stdout is not attached to
+    // the terminal. Persist the token next to the database as well.
+    let token_file = db_path
+        .parent()
+        .map(|dir| dir.join("recovery-token.txt"))
+        .unwrap_or_else(|| data_dir.join("recovery-token.txt"));
+    let _ = std::fs::write(&token_file, format!("{token}\n"));
     println!("{token}");
+    eprintln!("recovery token written to {}", token_file.display());
     Ok(())
 }
 

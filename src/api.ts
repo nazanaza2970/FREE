@@ -39,7 +39,7 @@ export async function initApiBase(): Promise<void> {
     const { invoke } = await import('@tauri-apps/api/core');
     const info = await invoke<{ base_url: string; token: string | null }>('get_api_info');
     apiBase = info.base_url.replace(/\/$/, '');
-    if (info.token && !getApiToken()) setApiToken(info.token);
+    if (info.token) setApiToken(info.token);
   } catch {
     apiBase = '';
   }

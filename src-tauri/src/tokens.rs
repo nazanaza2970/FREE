@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use rand::RngCore;
@@ -42,6 +45,35 @@ pub fn ensure_bootstrap_token(conn: &Connection) -> Option<String> {
     }
     let (token, hash) = generate_token();
     db::create_app_password(conn, "desktop-bootstrap", "*", &hash).ok()?;
+    Some(token)
+}
+
+/// Returns a stable desktop token whose plaintext is persisted next to the
+/// keystore (`<config>/desktop-token`). Unlike [`ensure_bootstrap_token`], this
+/// keeps working on later launches and even when the database already holds
+/// tokens (e.g. a migrated legacy DB), so the webview can always unlock.
+pub fn ensure_desktop_token(conn: &Connection, config_dir: &Path) -> Option<String> {
+    let path = config_dir.join("desktop-token");
+    if let Ok(raw) = fs::read_to_string(&path) {
+        let token = raw.trim().to_string();
+        if !token.is_empty()
+            && db::verify_token(conn, &token)
+                .ok()
+                .flatten()
+                .is_some()
+        {
+            return Some(token);
+        }
+    }
+    let (token, hash) = generate_token();
+    db::create_app_password(conn, "desktop", "*", &hash).ok()?;
+    let _ = fs::create_dir_all(config_dir);
+    let _ = fs::write(&path, format!("{token}\n"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
     Some(token)
 }
 
