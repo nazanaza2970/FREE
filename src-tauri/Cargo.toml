@@ -31,7 +31,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
-russh = "0.64"
+russh = { version = "0.64", default-features = false, features = ["flate2", "ring", "rsa"] }
 russh-sftp = "2.3"
 bytes = "1"
 
